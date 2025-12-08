@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "AttendanceApp",
+    "slug": "attendanceapp",
+    "scheme": "attendanceapp",
+    "owner": "pockie",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.pockie.attendanceapp"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.pockie.attendanceapp"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "f48eff67-3282-4ca7-90cb-e1ce0753ed38"
+      }
+    }
+  }
+}

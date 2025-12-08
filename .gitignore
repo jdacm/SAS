@@ -1,0 +1,111 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# Dependencies
+node_modules/
+.expo/
+.expo-shared/
+
+# Production
+dist/
+web-build/
+
+# Expo
+.expo/
+.expo-shared/
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# Debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.log
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# TypeScript
+*.tsbuildinfo
+
+# Generated native folders
+/ios
+/android
+
+# Firebase secrets
+firebase-config.js
+firebase-secrets.json
+google-services.json
+GoogleService-Info.plist
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+tmp/
+temp/
+
+# Build outputs
+build/
+*.apk
+*.aab
+*.ipa
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Misc
+.eslintcache
+
+# ===== ESP32 FOLDER IGNORES =====
+# ESP32 build outputs
+Esp32-Firebase/.pio/
+Esp32-Firebase/.pioenvs/
+Esp32-Firebase/.piolibdeps/
+Esp32-Firebase/*.hex
+Esp32-Firebase/*.elf
+Esp32-Firebase/*.eep
+Esp32-Firebase/*.bin
+Esp32-Firebase/*.lss
+Esp32-Firebase/*.sym
+Esp32-Firebase/*.map
+
+# ESP32 object files
+Esp32-Firebase/*.slo
+Esp32-Firebase/*.lo
+Esp32-Firebase/*.o
+Esp32-Firebase/*.obj
+
+# ESP32 secrets (CRITICAL - THIS PROTECTS YOUR PASSWORDS)
+Esp32-Firebase/config.h
+Esp32-Firebase/secrets.h
+Esp32-Firebase/wifi_config.h
+Esp32-Firebase/firebase_config.h
+Esp32-Firebase/private_config.h
+
+# ESP32 IDE files
+Esp32-Firebase/.vscode/
+Esp32-Firebase/*.swp
+Esp32-Firebase/*.swo
+Esp32-Firebase/*~
