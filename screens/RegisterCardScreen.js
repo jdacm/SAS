@@ -1,34 +1,44 @@
+// screens/RegisterCardScreen.js - UPDATED WITH LARGER BUTTONS
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  Pressable, 
-  Alert, 
-  Image,
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  Alert,
+  ActivityIndicator,
+  ScrollView,
+  useWindowDimensions,
+  Vibration,
   Modal,
-  ActivityIndicator
+  Animated
 } from 'react-native';
 import ScreenContainer from '../components/ScreenContainer';
 import { database } from '../firebaseConfig';
-import { ref, set, get } from 'firebase/database';
-import * as Crypto from 'expo-crypto';
+import { ref, set, get, remove } from 'firebase/database';
 
 export default function RegisterCardScreen({ user, navigation }) {
   const [scanning, setScanning] = useState(false);
   const [lastScanned, setLastScanned] = useState(null);
   const [registeredCards, setRegisteredCards] = useState([]);
-  const [showPhoneNFCModal, setShowPhoneNFCModal] = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [virtualNfcId, setVirtualNfcId] = useState('');
+  const [nfcSupported, setNfcSupported] = useState(true);
+  const [nfcEnabled, setNfcEnabled] = useState(true);
+  const [showScanner, setShowScanner] = useState(false);
+  const { width } = useWindowDimensions();
+  
+  // Animation values
+  const scanAnim = useState(new Animated.Value(0))[0];
+  const pulseAnim = useState(new Animated.Value(1))[0];
 
-  React.useEffect(() => {
+  useEffect(() => {
     loadUserCards();
-  }, []);
+    startPulseAnimation();
+  }, [user]);
 
+  // Load user's cards
   const loadUserCards = async () => {
     try {
-      const cardsRef = ref(database, 'cardMappings');
+      const cardsRef = ref(database, 'userCards');
       const snapshot = await get(cardsRef);
       if (snapshot.exists()) {
         const cards = [];
@@ -36,9 +46,8 @@ export default function RegisterCardScreen({ user, navigation }) {
           const data = childSnapshot.val();
           if (data.userId === user.uid) {
             cards.push({
-              nfcUid: childSnapshot.key,
-              ...data,
-              isVirtual: data.isVirtual || false
+              id: childSnapshot.key,
+              ...data
             });
           }
         });
@@ -49,153 +58,307 @@ export default function RegisterCardScreen({ user, navigation }) {
     }
   };
 
-  const generateVirtualNFC = async () => {
-    setGenerating(true);
-    try {
-      const uniqueId = await Crypto.digestStringAsync(
-        Crypto.CryptoDigestAlgorithm.SHA256,
-        `${user.uid}-${Date.now()}-${Math.random()}`
-      );
+  // NFC scanning function
+  const scanNFC = () => {
+    setScanning(true);
+    setShowScanner(true);
+    setLastScanned(null);
+    
+    // Start scanning animation
+    Animated.timing(scanAnim, {
+      toValue: 1,
+      duration: 2000,
+      useNativeDriver: true,
+    }).start();
+    
+    // Simulate scanning process
+    setTimeout(() => {
+      Vibration.vibrate([100, 50, 100]);
       
-      const virtualId = uniqueId.substring(0, 8).toUpperCase();
-      setVirtualNfcId(virtualId);
-      
-      await linkVirtualCard(virtualId, true);
-      
-    } catch (error) {
-      console.error('Error generating virtual NFC:', error);
-      Alert.alert('Error', 'Failed to generate virtual NFC ID');
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const linkVirtualCard = async (nfcUid, isVirtual = false) => {
-    try {
-      const cardRef = ref(database, `cardMappings/${nfcUid}`);
-      const snapshot = await get(cardRef);
-      
-      if (snapshot.exists()) {
-        Alert.alert('Error', 'This ID is already registered. Generating a new one...');
-        await generateVirtualNFC();
-        return;
+      // Generate realistic NFC UID
+      const hex = '0123456789ABCDEF';
+      let nfcUid = '';
+      for (let i = 0; i < 8; i++) {
+        nfcUid += hex[Math.floor(Math.random() * hex.length)];
       }
       
-      await set(cardRef, {
-        userId: user.uid,
-        userName: user.displayName,
-        userEmail: user.email,
-        linkedAt: Date.now(),
-        lastUsed: null,
-        isVirtual: isVirtual,
-        deviceInfo: isVirtual ? 'Mobile Device' : 'Physical NFC Card'
-      });
+      // Format like real NFC UID
+      nfcUid = nfcUid.match(/.{1,2}/g).join(':');
       
-      Alert.alert(
-        'Success',
-        `Virtual NFC ID created!\n\nID: ${nfcUid}\n\nUse this ID for mobile check-in.`,
-        [
-          { 
-            text: 'OK', 
-            onPress: () => {
-              loadUserCards();
-              setShowPhoneNFCModal(false);
-            }
-          }
-        ]
-      );
-    } catch (error) {
-      console.error('Error linking virtual card:', error);
-      Alert.alert('Error', 'Failed to create virtual NFC ID');
-    }
-  };
-
-  const simulateNFCScan = () => {
-    setScanning(true);
-    
-    setTimeout(() => {
-      const mockNfcUid = generateMockNfcUid();
-      setLastScanned(mockNfcUid);
+      setLastScanned(nfcUid);
       setScanning(false);
       
-      Alert.alert(
-        'Card Detected',
-        `NFC UID: ${mockNfcUid}\n\nLink this card to your account?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Link Card', 
-            onPress: () => linkPhysicalCard(mockNfcUid) 
-          }
-        ]
-      );
-    }, 1500);
+      // Show card detected
+      setTimeout(() => {
+        setShowScanner(false);
+        showRegistrationOptions(nfcUid);
+        scanAnim.setValue(0);
+      }, 800);
+    }, 2500);
   };
 
-  const generateMockNfcUid = () => {
-    const hexChars = '0123456789ABCDEF';
-    let uid = '';
-    for (let i = 0; i < 8; i++) {
-      uid += hexChars.charAt(Math.floor(Math.random() * hexChars.length));
-    }
-    return uid;
+  // NFC Scanner Modal
+  const renderNFCScanner = () => (
+    <Modal
+      transparent
+      visible={showScanner}
+      animationType="fade"
+      onRequestClose={() => {
+        setShowScanner(false);
+        setScanning(false);
+      }}
+    >
+      <View style={styles.scannerOverlay}>
+        <View style={styles.scannerContainer}>
+          <View style={styles.scannerHeader}>
+            <Text style={styles.scannerTitle}>NFC Scanner</Text>
+            <Pressable onPress={() => setShowScanner(false)}>
+              <Text style={styles.scannerClose}>✕</Text>
+            </Pressable>
+          </View>
+          
+          <View style={styles.scannerContent}>
+            <View style={styles.phoneOutline}>
+              <View style={styles.phoneScreen}>
+                <Animated.View 
+                  style={[
+                    styles.scanBeam,
+                    {
+                      transform: [
+                        { scale: pulseAnim },
+                        { translateY: scanAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, -100]
+                        })}
+                      ],
+                      opacity: scanAnim.interpolate({
+                        inputRange: [0, 0.5, 1],
+                        outputRange: [0.7, 1, 0]
+                      })
+                    }
+                  ]}
+                />
+                <View style={styles.nfcIndicator}>
+                  <Text style={styles.nfcIndicatorText}>NFC</Text>
+                </View>
+              </View>
+            </View>
+            
+            <Text style={styles.scannerStatus}>
+              {scanning ? "Scanning for NFC card..." : "✓ Card detected!"}
+            </Text>
+            
+            {scanning ? (
+              <View style={styles.scanningIndicator}>
+                <ActivityIndicator size="large" color="#06b6d4" />
+                <Text style={styles.scanningText}>Hold card near phone</Text>
+              </View>
+            ) : (
+              <View style={styles.successIndicator}>
+                <Text style={styles.successIcon}>✓</Text>
+                <Text style={styles.successText}>Card read successfully</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  // Start pulse animation
+  const startPulseAnimation = () => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.2,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
   };
 
-  const linkPhysicalCard = async (nfcUid) => {
+  // Show registration options
+  const showRegistrationOptions = (nfcUid) => {
+    Alert.alert(
+      'Card Detected',
+      `Card ID: ${nfcUid}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Register Card', 
+          onPress: () => registerPhysicalCard(nfcUid, false)
+        },
+        { 
+          text: 'Register + Virtual Copy', 
+          onPress: () => registerPhysicalCard(nfcUid, true)
+        }
+      ]
+    );
+  };
+
+  // Register physical card
+  const registerPhysicalCard = async (nfcUid, createVirtual = false) => {
     try {
-      const cardRef = ref(database, `cardMappings/${nfcUid}`);
-      const snapshot = await get(cardRef);
+      // Check if card already registered
+      const checkRef = ref(database, `physicalCards/${nfcUid}`);
+      const snapshot = await get(checkRef);
       
       if (snapshot.exists()) {
-        Alert.alert('Error', 'This card is already registered to another user.');
+        Alert.alert('Error', 'This card is already registered');
         return;
       }
+
+      const safeKey = `card_${user.uid.substring(0, 6)}_${Date.now()}`;
       
-      await set(cardRef, {
+      // Register physical card
+      await set(ref(database, `physicalCards/${nfcUid}`), {
         userId: user.uid,
         userName: user.displayName,
         userEmail: user.email,
         linkedAt: Date.now(),
-        lastUsed: null,
-        isVirtual: false,
-        deviceInfo: 'Physical NFC Card'
+        isActive: true,
+        type: 'physical'
       });
+
+      // Add to user's card list
+      await set(ref(database, `userCards/${safeKey}_physical`), {
+        userId: user.uid,
+        cardId: nfcUid,
+        cardType: 'physical',
+        linkedAt: Date.now(),
+        name: 'NFC ID Card'
+      });
+
+      let virtualId = null;
       
+      if (createVirtual) {
+        // Generate virtual ID
+        virtualId = `V-${user.uid.substring(0, 4)}-${Date.now().toString(36).toUpperCase().substring(4, 8)}`;
+        
+        // Register virtual card
+        await set(ref(database, `virtualCards/${virtualId}`), {
+          userId: user.uid,
+          userName: user.displayName,
+          userEmail: user.email,
+          physicalCardId: nfcUid,
+          linkedAt: Date.now(),
+          isActive: true,
+          type: 'virtual'
+        });
+
+        // Add virtual card to user's list
+        await set(ref(database, `userCards/${safeKey}_virtual`), {
+          userId: user.uid,
+          cardId: virtualId,
+          cardType: 'virtual',
+          physicalCardId: nfcUid,
+          linkedAt: Date.now(),
+          name: 'Phone NFC Emulation'
+        });
+      }
+
       Alert.alert(
-        'Success',
-        'Physical card linked successfully!',
-        [
-          { 
-            text: 'OK', 
-            onPress: () => {
-              loadUserCards();
-              setLastScanned(null);
-            }
+        'Registration Successful',
+        `Card registered successfully!${virtualId ? `\n\nVirtual ID: ${virtualId}` : ''}`,
+        [{ 
+          text: 'OK', 
+          onPress: () => {
+            loadUserCards();
+            Vibration.vibrate([100, 50, 100, 50, 100]);
           }
-        ]
+        }]
       );
+
     } catch (error) {
-      console.error('Error linking card:', error);
-      Alert.alert('Error', 'Failed to link card. Please try again.');
+      console.error('Registration error:', error);
+      Alert.alert('Registration Error', 'Failed to register card');
     }
   };
 
-  const unlinkCard = async (nfcUid) => {
+  // Create virtual ID
+  const createVirtualID = async () => {
+    const virtualId = `V-${user.uid.substring(0, 4)}-${Date.now().toString(36).toUpperCase().substring(4, 8)}`;
+    const safeKey = `virtual_${user.uid.substring(0, 6)}_${Date.now()}`;
+    
+    try {
+      await set(ref(database, `virtualCards/${virtualId}`), {
+        userId: user.uid,
+        userName: user.displayName,
+        userEmail: user.email,
+        linkedAt: Date.now(),
+        isActive: true,
+        type: 'virtual'
+      });
+
+      await set(ref(database, `userCards/${safeKey}_virtual`), {
+        userId: user.uid,
+        cardId: virtualId,
+        cardType: 'virtual',
+        linkedAt: Date.now(),
+        name: 'Phone NFC ID'
+      });
+
+      Alert.alert(
+        'Virtual ID Created',
+        `Your virtual ID: ${virtualId}\n\nUse this for phone NFC check-in.`,
+        [{ text: 'OK', onPress: loadUserCards }]
+      );
+    } catch (error) {
+      console.error('Virtual ID error:', error);
+      Alert.alert('Error', 'Failed to create virtual ID');
+    }
+  };
+
+  // Quick registration (for demo purposes)
+  const quickRegister = () => {
+    const demoUid = '04:A3:B8:C7:D2:E9:F1:88';
+    setLastScanned(demoUid);
+    registerPhysicalCard(demoUid, true);
+  };
+
+  // Remove card
+  const removeCard = async (cardId, cardType) => {
     Alert.alert(
-      'Unlink Card',
-      'Are you sure you want to unlink this card?',
+      'Remove Card',
+      `Remove this ${cardType} card from your account?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Unlink',
+          text: 'Remove',
           style: 'destructive',
           onPress: async () => {
             try {
-              await set(ref(database, `cardMappings/${nfcUid}`), null);
+              // Remove from main collection
+              if (cardType === 'physical') {
+                await remove(ref(database, `physicalCards/${cardId}`));
+              } else {
+                await remove(ref(database, `virtualCards/${cardId}`));
+              }
+              
+              // Remove from userCards
+              const userCardsRef = ref(database, 'userCards');
+              const snapshot = await get(userCardsRef);
+              
+              if (snapshot.exists()) {
+                snapshot.forEach((child) => {
+                  const data = child.val();
+                  if (data.userId === user.uid && data.cardId === cardId) {
+                    remove(ref(database, `userCards/${child.key}`));
+                  }
+                });
+              }
+              
+              Alert.alert('Success', 'Card removed');
               loadUserCards();
-              Alert.alert('Success', 'Card unlinked successfully.');
             } catch (error) {
-              Alert.alert('Error', 'Failed to unlink card.');
+              console.error('Remove error:', error);
+              Alert.alert('Error', 'Failed to remove card');
             }
           }
         }
@@ -203,323 +366,329 @@ export default function RegisterCardScreen({ user, navigation }) {
     );
   };
 
-  const copyVirtualIdToClipboard = async () => {
-    if (virtualNfcId) {
-      if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        await navigator.clipboard.writeText(virtualNfcId);
-        Alert.alert('Copied!', 'Virtual NFC ID copied to clipboard.');
-      } else {
-        Alert.alert('Virtual NFC ID', virtualNfcId);
-      }
-    }
-  };
-
   return (
     <ScreenContainer>
-      <View style={styles.inner}>
-        <Pressable style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Text style={styles.backButtonText}>← Back</Text>
-        </Pressable>
-        
-        <Text style={styles.title}>NFC Registration</Text>
-        <Text style={styles.subtitle}>
-          Link physical cards or create virtual IDs
-        </Text>
-        
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Image 
-              source={{ uri: 'https://cdn-icons-png.flaticon.com/512/2965/2965306.png' }}
-              style={styles.nfcIcon}
-            />
-            <Text style={styles.cardTitle}>Options</Text>
-          </View>
-          
-          <View style={styles.optionsContainer}>
-            <Pressable 
-              style={styles.optionButton}
-              onPress={() => setShowPhoneNFCModal(true)}
-            >
-              <View style={styles.optionIcon}>
-                <Text style={styles.optionIconText}>📱</Text>
-              </View>
-              <Text style={styles.optionTitle}>Use Phone as NFC</Text>
-              <Text style={styles.optionDescription}>
-                Generate virtual NFC ID for mobile check-in
-              </Text>
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        <View style={styles.container}>
+          {/* Header */}
+          <View style={styles.header}>
+            <Pressable style={styles.backButton} onPress={() => navigation.goBack()}>
+              <Text style={styles.backButtonText}>← Back</Text>
             </Pressable>
-            
-            <Pressable 
-              style={styles.optionButton}
-              onPress={simulateNFCScan}
+            <View style={styles.nfcStatus}>
+              <View style={[styles.statusDot, nfcEnabled && styles.statusActive]} />
+              <Text style={styles.nfcStatusText}>
+                {nfcEnabled ? 'NFC Ready' : 'NFC Off'}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.title}>Register Cards</Text>
+          <Text style={styles.subtitle}>
+            Register physical NFC cards or create virtual IDs
+          </Text>
+
+          {/* LARGER Action Buttons - Still 3 in a row */}
+          <View style={styles.actionsRow}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.actionButton,
+                scanning && styles.buttonDisabled,
+                pressed && styles.buttonPressed
+              ]}
+              onPress={scanNFC}
               disabled={scanning}
             >
-              <View style={styles.optionIcon}>
-                <Text style={styles.optionIconText}>💳</Text>
+              <View style={[styles.buttonIcon, { backgroundColor: '#06b6d4' }]}>
+                <Text style={styles.buttonIconText}>📱</Text>
               </View>
-              <Text style={styles.optionTitle}>Register Physical Card</Text>
-              <Text style={styles.optionDescription}>
-                Link a physical NFC card
+              <Text style={styles.buttonTitle}>
+                {scanning ? 'Scanning...' : 'Scan Card'}
               </Text>
-              {scanning && <ActivityIndicator size="small" color="#06b6d4" />}
+              <Text style={styles.buttonDescription}>
+                Tap physical card
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.actionButton,
+                pressed && styles.buttonPressed
+              ]}
+              onPress={createVirtualID}
+            >
+              <View style={[styles.buttonIcon, { backgroundColor: '#8b5cf6' }]}>
+                <Text style={styles.buttonIconText}>🆔</Text>
+              </View>
+              <Text style={styles.buttonTitle}>Virtual ID</Text>
+              <Text style={styles.buttonDescription}>
+                Phone NFC ID
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.actionButton,
+                pressed && styles.buttonPressed
+              ]}
+              onPress={quickRegister}
+            >
+              <View style={[styles.buttonIcon, { backgroundColor: '#10b981' }]}>
+                <Text style={styles.buttonIconText}>⚡</Text>
+              </View>
+              <Text style={styles.buttonTitle}>Quick Add</Text>
+              <Text style={styles.buttonDescription}>
+                Demo card
+              </Text>
             </Pressable>
           </View>
-          
+
+          {/* Last Scanned Card */}
           {lastScanned && (
-            <View style={styles.result}>
-              <Text style={styles.resultLabel}>Scanned Card:</Text>
-              <Text style={styles.resultValue}>{lastScanned}</Text>
-              <Pressable 
-                style={styles.linkButton}
-                onPress={() => linkPhysicalCard(lastScanned)}
-              >
-                <Text style={styles.linkButtonText}>Link This Card</Text>
-              </Pressable>
+            <View style={styles.scannedCard}>
+              <Text style={styles.scannedLabel}>Last Scanned Card:</Text>
+              <Text style={styles.scannedUid}>{lastScanned}</Text>
             </View>
           )}
-        </View>
-        
-        {registeredCards.length > 0 && (
-          <View style={styles.registeredSection}>
-            <Text style={styles.sectionTitle}>Your Registered IDs</Text>
-            {registeredCards.map((card, index) => (
-              <View key={index} style={styles.registeredCard}>
-                <View style={styles.cardInfo}>
-                  <View style={styles.cardHeaderRow}>
-                    <Text style={styles.cardUid}>{card.nfcUid}</Text>
-                    {card.isVirtual ? (
-                      <Text style={styles.virtualBadge}>VIRTUAL</Text>
-                    ) : (
-                      <Text style={styles.physicalBadge}>PHYSICAL</Text>
-                    )}
-                  </View>
-                  <Text style={styles.cardDevice}>{card.deviceInfo}</Text>
-                  <Text style={styles.cardDate}>
-                    Linked on {new Date(card.linkedAt).toLocaleDateString()}
-                  </Text>
-                  {card.lastUsed && (
-                    <Text style={styles.cardLastUsed}>
-                      Last used: {new Date(card.lastUsed).toLocaleDateString()}
-                    </Text>
-                  )}
-                </View>
-                <Pressable 
-                  style={styles.unlinkButton}
-                  onPress={() => unlinkCard(card.nfcUid)}
-                >
-                  <Text style={styles.unlinkButtonText}>Unlink</Text>
-                </Pressable>
-              </View>
-            ))}
-          </View>
-        )}
-      </View>
 
-      <Modal
-        visible={showPhoneNFCModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowPhoneNFCModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Phone as NFC</Text>
-            <Text style={styles.modalSubtitle}>
-              Generate a virtual NFC ID for mobile check-in
-            </Text>
+          {/* Registered Cards Section */}
+          <View style={styles.cardsSection}>
+            <Text style={styles.sectionTitle}>Your Cards ({registeredCards.length})</Text>
             
-            <View style={styles.virtualCard}>
-              <Text style={styles.virtualCardLabel}>Virtual NFC ID:</Text>
-              {virtualNfcId ? (
-                <>
-                  <Text style={styles.virtualCardId}>{virtualNfcId}</Text>
-                  <Text style={styles.virtualCardHint}>
-                    Use this ID for mobile check-in
-                  </Text>
-                </>
-              ) : (
-                <Text style={styles.virtualCardPlaceholder}>
-                  {generating ? 'Generating...' : 'No ID generated yet'}
+            {registeredCards.length > 0 ? (
+              registeredCards.map((card, index) => (
+                <View key={index} style={styles.cardItem}>
+                  <View style={styles.cardInfo}>
+                    <View style={styles.cardHeader}>
+                      <Text style={styles.cardId}>{card.cardId}</Text>
+                      <View style={[
+                        styles.cardTypeBadge,
+                        card.cardType === 'virtual' ? styles.virtualBadge : styles.physicalBadge
+                      ]}>
+                        <Text style={styles.cardTypeText}>
+                          {card.cardType.toUpperCase()}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={styles.cardName}>{card.name}</Text>
+                    <Text style={styles.cardDate}>
+                      Added: {new Date(card.linkedAt).toLocaleDateString()}
+                    </Text>
+                  </View>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.removeButton,
+                      pressed && styles.removeButtonPressed
+                    ]}
+                    onPress={() => removeCard(card.cardId, card.cardType)}
+                  >
+                    <Text style={styles.removeButtonText}>Remove</Text>
+                  </Pressable>
+                </View>
+              ))
+            ) : (
+              <View style={styles.emptyCards}>
+                <Text style={styles.emptyIcon}>💳</Text>
+                <Text style={styles.emptyTitle}>No Cards Registered</Text>
+                <Text style={styles.emptyDescription}>
+                  Use the buttons above to add cards
                 </Text>
-              )}
+              </View>
+            )}
+          </View>
+
+          {/* Quick Instructions */}
+          <View style={styles.instructions}>
+            <Text style={styles.instructionsTitle}>How to Register Cards</Text>
+            <View style={styles.instructionRow}>
+              <View style={styles.instructionBullet}>
+                <Text style={styles.instructionBulletText}>1</Text>
+              </View>
+              <Text style={styles.instructionText}>Tap "Scan Card" to register physical NFC cards</Text>
             </View>
-            
-            <View style={styles.modalButtons}>
-              <Pressable 
-                style={[styles.modalButton, styles.generateButton]}
-                onPress={generateVirtualNFC}
-                disabled={generating}
-              >
-                {generating ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Text style={styles.modalButtonText}>
-                    {virtualNfcId ? 'Regenerate ID' : 'Generate Virtual ID'}
-                  </Text>
-                )}
-              </Pressable>
-              
-              {virtualNfcId && (
-                <Pressable 
-                  style={[styles.modalButton, styles.copyButton]}
-                  onPress={copyVirtualIdToClipboard}
-                >
-                  <Text style={styles.modalButtonText}>Copy ID</Text>
-                </Pressable>
-              )}
-              
-              <Pressable 
-                style={[styles.modalButton, styles.closeButton]}
-                onPress={() => setShowPhoneNFCModal(false)}
-              >
-                <Text style={styles.closeButtonText}>Close</Text>
-              </Pressable>
+            <View style={styles.instructionRow}>
+              <View style={styles.instructionBullet}>
+                <Text style={styles.instructionBulletText}>2</Text>
+              </View>
+              <Text style={styles.instructionText}>"Virtual ID" creates phone-based NFC emulation</Text>
             </View>
-            
-            <View style={styles.instructions}>
-              <Text style={styles.instructionsTitle}>How to use:</Text>
-              <Text style={styles.instruction}>1. Generate a virtual NFC ID</Text>
-              <Text style={styles.instruction}>2. Use this ID for mobile check-in</Text>
-              <Text style={styles.instruction}>3. You can also use physical NFC cards</Text>
-              <Text style={styles.instruction}>4. Each user can have multiple IDs</Text>
+            <View style={styles.instructionRow}>
+              <View style={styles.instructionBullet}>
+                <Text style={styles.instructionBulletText}>3</Text>
+              </View>
+              <Text style={styles.instructionText}>"Quick Add" instantly registers a demo card</Text>
+            </View>
+            <View style={styles.instructionRow}>
+              <View style={styles.instructionBullet}>
+                <Text style={styles.instructionBulletText}>4</Text>
+              </View>
+              <Text style={styles.instructionText}>Both card types work for attendance check-in</Text>
             </View>
           </View>
         </View>
-      </Modal>
+      </ScrollView>
+
+      {/* NFC Scanner Modal */}
+      {renderNFCScanner()}
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  inner: { 
-    flex: 1,
-    paddingTop: 10,
-  },
-  backButton: {
-    alignSelf: 'flex-start',
-    marginBottom: 20,
-  },
-  backButtonText: {
-    fontSize: 16,
-    color: '#06b6d4',
-    fontWeight: '500',
-  },
-  title: { 
-    fontSize: 28, 
-    fontWeight: '700', 
-    color: '#0f172a',
-    marginBottom: 8,
-  },
-  subtitle: { 
-    color: '#64748b', 
-    marginBottom: 24,
-    fontSize: 15,
-  },
-  card: {
-    backgroundColor: '#fff',
-    padding: 24,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#eef6fb',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-    marginBottom: 24,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  nfcIcon: {
-    width: 24,
-    height: 24,
-    marginRight: 12,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#0f172a',
-  },
-  optionsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  optionButton: {
+  scrollView: { 
     flex: 1,
     backgroundColor: '#f8fafc',
+  },
+  container: { 
+    flex: 1, 
     padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#eef6fb',
+    paddingBottom: 30,
+  },
+  
+  // Header
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginHorizontal: 8,
-    minHeight: 120,
+    marginBottom: 20,
+    paddingTop: 8,
   },
-  optionIcon: {
-    marginBottom: 12,
+  backButton: { 
+    padding: 8,
+    paddingLeft: 0,
   },
-  optionIconText: {
-    fontSize: 32,
+  backButtonText: { 
+    fontSize: 16, 
+    color: '#06b6d4', 
+    fontWeight: '500' 
   },
-  optionTitle: {
-    fontSize: 14,
+  nfcStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#94a3b8',
+    marginRight: 6,
+  },
+  statusActive: { 
+    backgroundColor: '#10b981' 
+  },
+  nfcStatusText: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '500',
+  },
+  
+  title: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#0f172a',
+    marginBottom: 6,
+  },
+  subtitle: {
+    fontSize: 15,
+    color: '#64748b',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  
+  // LARGER Action Buttons (3 in a row)
+  actionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+    gap: 12,
+  },
+  actionButton: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingVertical: 20,
+    paddingHorizontal: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    minHeight: 130, // Increased from 100
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  buttonDisabled: { 
+    opacity: 0.6 
+  },
+  buttonPressed: {
+    transform: [{ scale: 0.97 }],
+    backgroundColor: '#f8fafc',
+  },
+  buttonIcon: {
+    width: 56, // Increased from 44
+    height: 56, // Increased from 44
+    borderRadius: 28, // Increased from 22
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12, // Increased from 8
+  },
+  buttonIconText: { 
+    fontSize: 28 // Increased from 22
+  },
+  buttonTitle: {
+    fontSize: 15, // Increased from 13
     fontWeight: '600',
     color: '#0f172a',
     marginBottom: 4,
     textAlign: 'center',
   },
-  optionDescription: {
+  buttonDescription: {
     fontSize: 12,
     color: '#64748b',
     textAlign: 'center',
     lineHeight: 16,
   },
-  result: {
-    padding: 16,
+  
+  // Scanned Card
+  scannedCard: {
     backgroundColor: '#f0f9ff',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#bae6fd',
-    alignItems: 'center',
+    padding: 18,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#06b6d4',
+    marginBottom: 24,
   },
-  resultLabel: {
-    fontSize: 13,
-    color: '#0369a1',
-    marginBottom: 4,
-    fontWeight: '500',
-  },
-  resultValue: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#0c4a6e',
-    fontFamily: 'monospace',
-    marginBottom: 12,
-  },
-  linkButton: {
-    backgroundColor: '#06b6d4',
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 6,
-  },
-  linkButtonText: {
-    color: '#fff',
+  scannedLabel: {
     fontSize: 14,
     fontWeight: '600',
+    color: '#0369a1',
+    marginBottom: 8,
   },
-  registeredSection: {
-    marginTop: 8,
+  scannedUid: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0c4a6e',
+    fontFamily: 'monospace',
+  },
+  
+  // Cards Section
+  cardsSection: {
+    marginBottom: 24,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
     color: '#0f172a',
     marginBottom: 16,
   },
-  registeredCard: {
+  cardItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -527,184 +696,248 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#eef6fb',
+    borderColor: '#e2e8f0',
     marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
   },
-  cardInfo: {
-    flex: 1,
+  cardInfo: { 
+    flex: 1, 
+    marginRight: 12 
   },
-  cardHeaderRow: {
+  cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 6,
+    flexWrap: 'wrap',
   },
-  cardUid: {
+  cardId: {
     fontSize: 14,
     fontWeight: '600',
     color: '#0f172a',
     fontFamily: 'monospace',
+    flex: 1,
     marginRight: 8,
   },
-  virtualBadge: {
-    fontSize: 10,
-    color: '#8b5cf6',
-    backgroundColor: '#ede9fe',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    fontWeight: '600',
+  cardTypeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
-  physicalBadge: {
-    fontSize: 10,
-    color: '#10b981',
-    backgroundColor: '#d1fae5',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    fontWeight: '600',
+  virtualBadge: { 
+    backgroundColor: '#ede9fe' 
   },
-  cardDevice: {
-    fontSize: 12,
+  physicalBadge: { 
+    backgroundColor: '#d1fae5' 
+  },
+  cardTypeText: {
+    fontSize: 10,
+    fontWeight: '700',
     color: '#475569',
-    marginBottom: 2,
+  },
+  cardName: {
+    fontSize: 14,
+    color: '#475569',
+    marginBottom: 4,
   },
   cardDate: {
     fontSize: 12,
     color: '#94a3b8',
-    marginBottom: 2,
   },
-  cardLastUsed: {
-    fontSize: 11,
-    color: '#64748b',
-    fontStyle: 'italic',
-  },
-  unlinkButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  removeButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     backgroundColor: '#fee2e2',
-    borderRadius: 6,
+    borderRadius: 8,
+    minWidth: 70,
+    alignItems: 'center',
   },
-  unlinkButtonText: {
-    fontSize: 12,
+  removeButtonPressed: {
+    backgroundColor: '#fecaca',
+  },
+  removeButtonText: {
+    fontSize: 13,
     color: '#dc2626',
-    fontWeight: '500',
+    fontWeight: '600',
   },
-  modalOverlay: {
+  
+  // Empty State
+  emptyCards: {
+    alignItems: 'center',
+    padding: 36,
+    backgroundColor: '#f8fafc',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderStyle: 'dashed',
+  },
+  emptyIcon: { 
+    fontSize: 48, 
+    marginBottom: 16 
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#64748b',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptyDescription: {
+    fontSize: 14,
+    color: '#94a3b8',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  
+  // Instructions
+  instructions: {
+    backgroundColor: '#f8fafc',
+    padding: 20,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  instructionsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#0f172a',
+    marginBottom: 16,
+  },
+  instructionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  instructionBullet: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#06b6d4',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+    marginTop: 2,
+  },
+  instructionBulletText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  instructionText: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    fontSize: 14,
+    color: '#475569',
+    lineHeight: 20,
+  },
+  
+  // NFC Scanner Styles (unchanged)
+  scannerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.9)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
-  modalContent: {
+  scannerContainer: {
     backgroundColor: '#fff',
     borderRadius: 20,
-    padding: 24,
-    alignItems: 'center',
     width: '100%',
-    maxWidth: 400,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 5,
+    maxWidth: 340,
+    overflow: 'hidden',
   },
-  modalTitle: {
-    fontSize: 20,
+  scannerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+  },
+  scannerTitle: {
+    fontSize: 18,
     fontWeight: '700',
     color: '#0f172a',
-    marginBottom: 4,
   },
-  modalSubtitle: {
-    fontSize: 14,
+  scannerClose: {
+    fontSize: 20,
     color: '#64748b',
-    marginBottom: 24,
-    textAlign: 'center',
+    padding: 4,
   },
-  virtualCard: {
-    backgroundColor: '#f8fafc',
-    padding: 20,
+  scannerContent: {
+    padding: 24,
+    alignItems: 'center',
+  },
+  phoneOutline: {
+    width: 220,
+    height: 140,
+    backgroundColor: '#0f172a',
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  phoneScreen: {
+    width: 200,
+    height: 100,
+    backgroundColor: '#1e293b',
     borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-    borderStyle: 'dashed',
-    width: '100%',
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 24,
+    position: 'relative',
   },
-  virtualCardLabel: {
+  scanBeam: {
+    position: 'absolute',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(6, 182, 212, 0.3)',
+    borderWidth: 2,
+    borderColor: '#06b6d4',
+  },
+  nfcIndicator: {
+    width: 50,
+    height: 50,
+    borderRadius: 10,
+    backgroundColor: '#06b6d4',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  nfcIndicatorText: {
     fontSize: 14,
-    color: '#64748b',
-    marginBottom: 8,
-    fontWeight: '500',
-  },
-  virtualCardId: {
-    fontSize: 24,
+    color: '#fff',
     fontWeight: '700',
-    color: '#06b6d4',
-    fontFamily: 'monospace',
-    marginBottom: 4,
-    letterSpacing: 1,
   },
-  virtualCardHint: {
-    fontSize: 12,
-    color: '#94a3b8',
+  scannerStatus: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#0f172a',
+    marginBottom: 20,
     textAlign: 'center',
   },
-  virtualCardPlaceholder: {
-    fontSize: 16,
-    color: '#cbd5e1',
-    fontStyle: 'italic',
-  },
-  modalButtons: {
-    width: '100%',
-    marginBottom: 20,
-  },
-  modalButton: {
-    paddingVertical: 14,
-    borderRadius: 10,
+  scanningIndicator: {
     alignItems: 'center',
+  },
+  scanningText: {
+    fontSize: 14,
+    color: '#64748b',
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  successIndicator: {
+    alignItems: 'center',
+  },
+  successIcon: {
+    fontSize: 48,
+    color: '#10b981',
     marginBottom: 12,
   },
-  generateButton: {
-    backgroundColor: '#06b6d4',
-  },
-  copyButton: {
-    backgroundColor: '#8b5cf6',
-  },
-  closeButton: {
-    backgroundColor: '#f1f5f9',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  modalButtonText: {
-    color: '#fff',
+  successText: {
     fontSize: 16,
+    color: '#10b981',
     fontWeight: '600',
-  },
-  closeButtonText: {
-    color: '#64748b',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  instructions: {
-    backgroundColor: '#f0f9ff',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#bae6fd',
-    width: '100%',
-  },
-  instructionsTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#0369a1',
-    marginBottom: 8,
-  },
-  instruction: {
-    fontSize: 12,
-    color: '#0369a1',
-    marginBottom: 4,
-    lineHeight: 16,
+    textAlign: 'center',
   },
 });

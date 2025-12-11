@@ -1,0 +1,43 @@
+{
+  "rules": {
+    "physicalCards": {
+      "$cardId": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        ".validate": "newData.hasChildren(['userId', 'linkedAt'])"
+      }
+    },
+    "virtualCards": {
+      "$cardId": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        ".validate": "newData.hasChildren(['userId', 'linkedAt'])"
+      }
+    },
+    "userCards": {
+      "$userCardId": {
+        ".read": "auth != null",
+        ".write": "auth != null && newData.child('userId').val() === auth.uid"
+      }
+    },
+    "attendance": {
+      "$recordId": {
+        ".read": "auth != null",
+        ".write": "true",
+        ".validate": "newData.hasChildren(['userId', 'timestamp', 'identifier'])"
+      }
+    },
+    "users": {
+      "$userId": {
+        ".read": "auth != null && auth.uid === $userId",
+        ".write": "auth != null && auth.uid === $userId"
+      }
+    },
+    "iot": {
+      "scans": {
+        ".read": "auth != null",
+        ".write": "true"
+      }
+    }
+  }
+}

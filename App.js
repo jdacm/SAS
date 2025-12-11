@@ -13,11 +13,13 @@ import CheckInScreen from './screens/CheckInScreen';
 import HistoryScreen from './screens/HistoryScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import RegisterCardScreen from './screens/RegisterCardScreen';
+import VirtualCardScreen from './screens/VirtualCardScreen';
+import HelpScreen from './screens/HelpScreen'; // ADD THIS IMPORT
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
-function MainTabs({ navigation }) {
+function MainTabs({ navigation, user }) {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -42,26 +44,34 @@ function MainTabs({ navigation }) {
       })}
     >
       <Tab.Screen name="Home">
-        {(props) => <HomeScreen {...props} rootNavigation={navigation} />}
+        {(props) => <HomeScreen {...props} user={user} rootNavigation={navigation} />}
       </Tab.Screen>
       <Tab.Screen name="Check-In">
-        {(props) => <CheckInScreen {...props} rootNavigation={navigation} />}
+        {(props) => <CheckInScreen {...props} user={user} rootNavigation={navigation} />}
       </Tab.Screen>
       <Tab.Screen name="History">
-        {(props) => <HistoryScreen {...props} rootNavigation={navigation} />}
+        {(props) => <HistoryScreen {...props} user={user} rootNavigation={navigation} />}
       </Tab.Screen>
       <Tab.Screen name="Profile">
-        {(props) => <ProfileScreen {...props} rootNavigation={navigation} />}
+        {(props) => <ProfileScreen {...props} user={user} rootNavigation={navigation} />}
       </Tab.Screen>
     </Tab.Navigator>
   );
 }
 
-function MainStack() {
+function MainStack({ user }) {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="MainTabs" component={MainTabs} />
-      <Stack.Screen name="RegisterCard" component={RegisterCardScreen} />
+      <Stack.Screen name="MainTabs">
+        {(props) => <MainTabs {...props} user={user} />}
+      </Stack.Screen>
+      <Stack.Screen name="RegisterCard">
+        {(props) => <RegisterCardScreen {...props} user={user} />}
+      </Stack.Screen>
+      <Stack.Screen name="VirtualCard">
+        {(props) => <VirtualCardScreen {...props} user={user} />}
+      </Stack.Screen>
+      <Stack.Screen name="Help" component={HelpScreen} />
     </Stack.Navigator>
   );
 }
@@ -108,7 +118,7 @@ export default function App() {
 
   return (
     <NavigationContainer>
-      {user ? <MainStack /> : <AuthStack />}
+      {user ? <MainStack user={user} /> : <AuthStack />}
     </NavigationContainer>
   );
 }

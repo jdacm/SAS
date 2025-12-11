@@ -4,7 +4,7 @@ import ScreenContainer from '../components/ScreenContainer';
 import { signOut } from 'firebase/auth';
 import { auth } from '../firebaseConfig';
 
-export default function ProfileScreen({ user }) {
+export default function ProfileScreen({ user, navigation }) { // ADD navigation prop here
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const handleLogout = () => {
@@ -51,6 +51,14 @@ export default function ProfileScreen({ user }) {
               <Text style={[styles.value, { fontSize: 12 }]}>{user?.uid || 'N/A'}</Text>
             </View>
           </View>
+          
+          {/* ADD HELP BUTTON HERE */}
+          <Pressable 
+            style={styles.helpButton}
+            onPress={() => navigation.navigate('Help')}
+          >
+            <Text style={styles.helpButtonText}>Help & Instructions</Text>
+          </Pressable>
           
           <Pressable 
             style={({ pressed }) => [
@@ -118,8 +126,22 @@ const styles = StyleSheet.create({
   label: { fontSize: 13, color: '#64748b', marginBottom: 4 },
   value: { fontSize: 15, fontWeight: '600', color: '#0f172a' },
   divider: { height: 1, backgroundColor: '#eef6fb' },
+  helpButton: {
+    backgroundColor: '#f0f9ff',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#bae6fd',
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  helpButtonText: {
+    fontSize: 14,
+    color: '#0369a1',
+    fontWeight: '600',
+  },
   logoutButton: {
-    marginTop: 32,
+    marginTop: 16,
     marginBottom: 20,
     backgroundColor: '#dc2626',
     paddingVertical: 16,

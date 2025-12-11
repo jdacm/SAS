@@ -1,5 +1,13 @@
+// screens/HistoryScreen.js - SIMPLE DIRECT DISPLAY
 import React, { useEffect, useState } from 'react';
-import { FlatList, Text, View, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
+import { 
+  FlatList, 
+  Text, 
+  View, 
+  StyleSheet, 
+  ActivityIndicator, 
+  RefreshControl 
+} from 'react-native';
 import { database } from '../firebaseConfig';
 import { ref, onValue } from 'firebase/database';
 import ScreenContainer from '../components/ScreenContainer';
@@ -23,7 +31,34 @@ export default function HistoryScreen({ user }) {
               ...data[key]
             }))
             .filter(item => item.userId === user.uid)
-            .sort((a, b) => b.timestamp - a.timestamp);
+            .map(item => {
+              // Use the dateTime string directly if it exists
+              if (item.dateTime) {
+                // Parse the dateTime string from ESP32 (format: "YYYY-MM-DD HH:MM:SS")
+                const [datePart, timePart] = item.dateTime.split(' ');
+                return {
+                  ...item,
+                  displayDate: datePart,
+                  displayTime: timePart,
+                  // Also keep timestamp for sorting
+                  sortTimestamp: item.timestamp || Date.now()
+                };
+              }
+              // Fallback to timestamp conversion
+              const date = new Date(item.timestamp || Date.now());
+              return {
+                ...item,
+                displayDate: date.toLocaleDateString('en-PH'),
+                displayTime: date.toLocaleTimeString('en-PH', { 
+                  hour: '2-digit', 
+                  minute: '2-digit',
+                  hour12: false  // Use 24-hour format to match ESP32
+                }),
+                sortTimestamp: item.timestamp || Date.now()
+              };
+            })
+            .sort((a, b) => b.sortTimestamp - a.sortTimestamp);
+          
           setAttendance(userAttendance);
         } else {
           setAttendance([]);
@@ -48,87 +83,48 @@ export default function HistoryScreen({ user }) {
     loadAttendance();
   };
 
-  const formatDate = (timestamp) => {
-    const dateObj = new Date(timestamp);
-    const phDate = dateObj.toLocaleDateString('en-PH', { 
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      timeZone: 'Asia/Manila'
-    });
-    const phTime = dateObj.toLocaleTimeString('en-PH', { 
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-      timeZone: 'Asia/Manila'
-    });
-    return { date: phDate, time: phTime };
-  };
-
-  const groupByDate = (records) => {
-    const groups = {};
-    records.forEach(record => {
-      const dateObj = new Date(record.timestamp);
-      const dateKey = dateObj.toLocaleDateString('en-PH', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        timeZone: 'Asia/Manila'
-      });
-      
-      if (!groups[dateKey]) {
-        groups[dateKey] = [];
-      }
-      groups[dateKey].push(record);
-    });
-    return groups;
-  };
-
-  const renderItem = ({ item }) => {
-    const { date, time } = formatDate(item.timestamp);
-    
-    return (
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <View style={styles.typeBadge}>
-            <Text style={styles.typeBadgeText}>NFC</Text>
-          </View>
-          <Text style={styles.time}>{time}</Text>
+  const renderItem = ({ item }) => (
+    <View style={styles.timelineItem}>
+      <View style={[
+        styles.timelineDot,
+        item.cardType === 'virtual' ? styles.dotVirtual : styles.dotPhysical
+      ]} />
+      <View style={styles.timelineContent}>
+        <View style={styles.timelineHeader}>
+          <Text style={styles.timelineTime}>{item.displayTime || '--:--'}</Text>
+          <Text style={styles.timelineDate}>{item.displayDate || '--/--/----'}</Text>
         </View>
-        <Text style={styles.date}>{date}</Text>
-        {item.nfcUid && (
+        
+        <View style={styles.methodRow}>
+          <View style={[
+            styles.methodBadge,
+            item.cardType === 'virtual' ? styles.badgeVirtual : styles.badgePhysical
+          ]}>
+            <Text style={styles.methodBadgeText}>
+              {item.cardType === 'virtual' ? 'PHONE NFC' : 'CARD NFC'}
+            </Text>
+          </View>
+          {item.device && (
+            <Text style={styles.deviceText}>{item.device}</Text>
+          )}
+        </View>
+        
+        {item.uid && (
           <View style={styles.cardIdRow}>
-            <Text style={styles.cardIdLabel}>Card:</Text>
-            <Text style={styles.cardId}>{item.nfcUid}</Text>
+            <Text style={styles.cardIdLabel}>Card ID: </Text>
+            <Text style={styles.cardId}>{item.uid}</Text>
           </View>
         )}
+        
+        {item.location && (
+          <Text style={styles.locationText}>📍 {item.location}</Text>
+        )}
+        
+        {/* Debug info - show what ESP32 recorded */}
+        {item.dateTime && (
+          <Text style={styles.rawInfo}>ESP32 recorded: {item.dateTime}</Text>
+        )}
       </View>
-    );
-  };
-
-  const renderSection = (date, records) => (
-    <View key={date} style={styles.section}>
-      <Text style={styles.sectionTitle}>{date}</Text>
-      {records.map(record => {
-        const { time } = formatDate(record.timestamp);
-        return (
-          <View key={record.id} style={styles.timelineItem}>
-            <View style={styles.timelineDot} />
-            <View style={styles.timelineContent}>
-              <View style={styles.timelineHeader}>
-                <Text style={styles.timelineTime}>{time}</Text>
-                <View style={styles.methodBadge}>
-                  <Text style={styles.methodBadgeText}>NFC Check-in</Text>
-                </View>
-              </View>
-              {record.nfcUid && (
-                <Text style={styles.timelineCardId}>Card: {record.nfcUid}</Text>
-              )}
-            </View>
-          </View>
-        );
-      })}
     </View>
   );
 
@@ -143,28 +139,27 @@ export default function HistoryScreen({ user }) {
     );
   }
 
-  const groupedAttendance = groupByDate(attendance);
-  const sections = Object.entries(groupedAttendance);
-
   return (
     <ScreenContainer>
       <View style={styles.inner}>
         <Text style={styles.title}>Attendance History</Text>
-        <Text style={styles.subtitle}>Your check-in records</Text>
+        <Text style={styles.subtitle}>
+          {attendance.length} check-in{attendance.length !== 1 ? 's' : ''} recorded
+        </Text>
         
         {attendance.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyIcon}>📊</Text>
             <Text style={styles.emptyTitle}>No Records Yet</Text>
             <Text style={styles.emptySubtitle}>
-              Check in using NFC or QR code to see your history here
+              Tap your NFC card on the ESP32 reader to record attendance
             </Text>
           </View>
         ) : (
           <FlatList
-            data={sections}
-            keyExtractor={([date]) => date}
-            renderItem={({ item: [date, records] }) => renderSection(date, records)}
+            data={attendance}
+            keyExtractor={(item) => item.id}
+            renderItem={renderItem}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -185,6 +180,7 @@ export default function HistoryScreen({ user }) {
 const styles = StyleSheet.create({
   inner: { 
     flex: 1,
+    padding: 16,
     paddingTop: 10,
   },
   loadingContainer: {
@@ -230,16 +226,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
   },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#0f172a',
-    marginBottom: 12,
-    paddingLeft: 24,
-  },
   timelineItem: {
     flexDirection: 'row',
     marginBottom: 16,
@@ -248,9 +234,14 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#06b6d4',
     marginRight: 12,
     marginTop: 4,
+  },
+  dotPhysical: {
+    backgroundColor: '#06b6d4',
+  },
+  dotVirtual: {
+    backgroundColor: '#8b5cf6',
   },
   timelineContent: {
     flex: 1,
@@ -269,32 +260,75 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   timelineTime: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
     color: '#0f172a',
   },
+  timelineDate: {
+    fontSize: 14,
+    color: '#64748b',
+  },
+  methodRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    flexWrap: 'wrap',
+  },
   methodBadge: {
-    backgroundColor: '#dbeafe',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
+    marginRight: 8,
+    marginBottom: 4,
+  },
+  badgePhysical: {
+    backgroundColor: '#dbeafe',
+  },
+  badgeVirtual: {
+    backgroundColor: '#ede9fe',
   },
   methodBadgeText: {
     fontSize: 11,
-    color: '#1d4ed8',
-    fontWeight: '500',
+    fontWeight: '600',
+    color: '#475569',
   },
-  timelineCardId: {
+  deviceText: {
     fontSize: 13,
     color: '#64748b',
+    fontStyle: 'italic',
+  },
+  cardIdRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  cardIdLabel: {
+    fontSize: 13,
+    color: '#64748b',
+    marginRight: 4,
+  },
+  cardId: {
+    fontSize: 13,
+    color: '#0f172a',
     fontFamily: 'monospace',
     backgroundColor: '#f8fafc',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
-    alignSelf: 'flex-start',
+  },
+  locationText: {
+    fontSize: 12,
+    color: '#64748b',
+    fontStyle: 'italic',
+    marginBottom: 4,
+  },
+  rawInfo: {
+    fontSize: 10,
+    color: '#94a3b8',
+    fontFamily: 'monospace',
+    marginTop: 4,
   },
 });
